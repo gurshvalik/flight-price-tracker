@@ -2,9 +2,9 @@ name: Flight price checker
 
 on:
   schedule:
-    - cron: "0 9 * * *"    # 09:00 UTC
-    - cron: "0 21 * * *"   # 21:00 UTC
-  workflow_dispatch:        # запуск вручную
+    - cron: "0 8 * * *"   # 09:00 Польское время = 08:00 UTC (летнее время)
+    - cron: "0 20 * * *"  # 21:00 Польское время = 20:00 UTC
+  workflow_dispatch:
 
 jobs:
   check:
@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - run: pip install requests
+      - run: pip install requests pytz
 
       - run: python check_flights.py
         env:
