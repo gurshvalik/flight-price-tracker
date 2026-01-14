@@ -2,6 +2,8 @@ import requests
 import os
 import json
 from datetime import datetime
+import pytz  # для часового пояса Польши
+import subprocess  # для git commit/push
 
 # --- Telegram ---
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -33,8 +35,10 @@ access_token = auth_resp.json()["access_token"]
 
 # --- Запрос цен по датам ---
 flights_url = "https://test.api.amadeus.com/v2/shopping/flight-offers"
-
 history_entries = []
+
+# Польский часовой пояс
+poland_tz = pytz.timezone("Europe/Warsaw")
 
 for DEPARTURE_DATE in DATES:
     params = {
@@ -54,7 +58,7 @@ for DEPARTURE_DATE in DATES:
     except Exception:
         price = None
 
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+    now = datetime.utcnow().replace(tzinfo=pytz.utc).astimezone(poland_tz).strftime("%Y-%m-%d %H:%M")
     history_entries.append({"datetime": now, "departure": DEPARTURE_DATE, "price": price})
 
 # --- Сохраняем историю ---
@@ -65,7 +69,7 @@ except FileNotFoundError:
     history = []
 
 history.extend(history_entries)
-history = history[-6:]  # оставляем последние 6 проверок (3 дня × 2 раза в день)
+history = history[-6:]  # последние 6 проверок (3 дня × 2 раза в день)
 
 with open(HISTORY_FILE, "w") as f:
     json.dump(history, f, indent=2)
@@ -80,3 +84,13 @@ payload = {"chat_id": CHAT_ID, "text": report}
 response = requests.post(url, json=payload)
 print("STATUS:", response.status_code)
 print("RESPONSE:", response.text)
+
+# --- Commit prices.json обратно в репо ---
+try:
+    subprocess.run(["git", "config", "--global", "user.name", "github-actions"], check=True)
+    subprocess.run(["git", "config", "--global", "user.email", "github-actions@users.noreply.github.com"], check=True)
+    subprocess.run(["git", "add", HISTORY_FILE], check=True)
+    subprocess.run(["git", "commit", "-m", f"Update flight prices {datetime.now().strftime('%Y-%m-%d %H:%M')}"], check=True)
+    subprocess.run(["git", "push"], check=True)
+except subprocess.CalledProcessError:
+    print("No changes to commit or git error")
