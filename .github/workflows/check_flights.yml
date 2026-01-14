@@ -1,25 +1,33 @@
-name: Flight price checker
+name: Flight Price Checker
 
+# --- Запуск расписанием и вручную ---
 on:
   schedule:
-    - cron: "0 8 * * *"   # 09:00 Польское время = 08:00 UTC (летнее время)
-    - cron: "0 20 * * *"  # 21:00 Польское время = 20:00 UTC
-  workflow_dispatch:
+    # 09:00 и 21:00 по Польскому времени (CET/CEST)
+    - cron: "0 8 * * *"   # 09:00 польского времени = 08:00 UTC (летнее время)
+    - cron: "0 20 * * *"  # 21:00 польского времени = 20:00 UTC
+  workflow_dispatch:      # запуск вручную
 
 jobs:
-  check:
+  check_flights:
     runs-on: ubuntu-latest
 
     steps:
+      # Клонируем репозиторий
       - uses: actions/checkout@v4
 
+      # Устанавливаем Python
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - run: pip install requests pytz
+      # Устанавливаем зависимости
+      - name: Install dependencies
+        run: pip install requests pytz
 
-      - run: python check_flights.py
+      # Запуск скрипта
+      - name: Run flight checker
+        run: python check_flights.py
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
