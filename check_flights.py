@@ -1,18 +1,78 @@
 import requests
 import os
-from datetime import date
+import json
+from datetime import datetime, timedelta
 
+# Telegram
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
-message = f"✈️ Тест! GitHub Actions работает.\nДата: {date.today()}"
+# Amadeus
+AMADEUS_KEY = os.environ["AMADEUS_API_KEY"]
+AMADEUS_SECRET = os.environ["AMADEUS_API_SECRET"]
 
-url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-payload = {
-    "chat_id": CHAT_ID,
-    "text": message
+# Параметры поиска
+ORIGIN = "WAW"
+DESTINATION = "BCN"
+DEPARTURE_DATE = (datetime.utcnow() + timedelta(days=7)).strftime("%Y-%m-%d")  # через неделю
+ADULTS = 1
+
+# Файл истории
+HISTORY_FILE = "prices.json"
+
+# --- Получаем токен Amadeus ---
+auth_url = "https://test.api.amadeus.com/v1/security/oauth2/token"
+auth_data = {
+    "grant_type": "client_credentials",
+    "client_id": AMADEUS_KEY,
+    "client_secret": AMADEUS_SECRET
 }
+auth_resp = requests.post(auth_url, data=auth_data)
+auth_resp.raise_for_status()
+access_token = auth_resp.json()["access_token"]
 
+# --- Запрос цены ---
+flights_url = "https://test.api.amadeus.com/v2/shopping/flight-offers"
+params = {
+    "originLocationCode": ORIGIN,
+    "destinationLocationCode": DESTINATION,
+    "departureDate": DEPARTURE_DATE,
+    "adults": ADULTS,
+    "max": 1
+}
+headers = {"Authorization": f"Bearer {access_token}"}
+resp = requests.get(flights_url, headers=headers, params=params)
+resp.raise_for_status()
+data = resp.json()
+
+# Получаем минимальную цену
+try:
+    price = float(data["data"][0]["price"]["total"])
+except Exception as e:
+    price = None
+
+# --- Сохраняем в историю ---
+now = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+try:
+    with open(HISTORY_FILE, "r") as f:
+        history = json.load(f)
+except FileNotFoundError:
+    history = []
+
+history.append({"datetime": now, "price": price})
+# оставляем последние 6 записей (3 дня по 2 проверки)
+history = history[-6:]
+
+with open(HISTORY_FILE, "w") as f:
+    json.dump(history, f, indent=2)
+
+# --- Формируем отчет ---
+prices_str = "\n".join([f"{h['datetime']}: {h['price']} €" for h in history])
+report = f"✈️ WAW → BCN\nТекущая цена: {price} €\nПоследние 3 дня:\n{prices_str}"
+
+# --- Отправка в Telegram ---
+url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+payload = {"chat_id": CHAT_ID, "text": report}
 response = requests.post(url, json=payload)
-print(response.status_code)
-print(response.text)
+print("STATUS:", response.status_code)
+print("RESPONSE:", response.text)
