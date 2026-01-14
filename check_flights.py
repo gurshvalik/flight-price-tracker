@@ -1,23 +1,23 @@
 import requests
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 
-# Telegram
+# --- Telegram ---
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
-# Amadeus
+# --- Amadeus ---
 AMADEUS_KEY = os.environ["AMADEUS_API_KEY"]
 AMADEUS_SECRET = os.environ["AMADEUS_API_SECRET"]
 
-# Параметры поиска
+# --- Параметры поиска ---
 ORIGIN = "WAW"
-DESTINATION = "BCN"
-DEPARTURE_DATE = (datetime.utcnow() + timedelta(days=7)).strftime("%Y-%m-%d")  # через неделю
+DESTINATION = "PFO"
+DATES = ["2026-04-26", "2026-04-27", "2026-04-28"]
 ADULTS = 1
 
-# Файл истории
+# --- Файл истории ---
 HISTORY_FILE = "prices.json"
 
 # --- Получаем токен Amadeus ---
@@ -31,44 +31,48 @@ auth_resp = requests.post(auth_url, data=auth_data)
 auth_resp.raise_for_status()
 access_token = auth_resp.json()["access_token"]
 
-# --- Запрос цены ---
+# --- Запрос цен по датам ---
 flights_url = "https://test.api.amadeus.com/v2/shopping/flight-offers"
-params = {
-    "originLocationCode": ORIGIN,
-    "destinationLocationCode": DESTINATION,
-    "departureDate": DEPARTURE_DATE,
-    "adults": ADULTS,
-    "max": 1
-}
-headers = {"Authorization": f"Bearer {access_token}"}
-resp = requests.get(flights_url, headers=headers, params=params)
-resp.raise_for_status()
-data = resp.json()
 
-# Получаем минимальную цену
-try:
-    price = float(data["data"][0]["price"]["total"])
-except Exception as e:
-    price = None
+history_entries = []
 
-# --- Сохраняем в историю ---
-now = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+for DEPARTURE_DATE in DATES:
+    params = {
+        "originLocationCode": ORIGIN,
+        "destinationLocationCode": DESTINATION,
+        "departureDate": DEPARTURE_DATE,
+        "adults": ADULTS,
+        "max": 1
+    }
+    headers = {"Authorization": f"Bearer {access_token}"}
+    resp = requests.get(flights_url, headers=headers, params=params)
+    resp.raise_for_status()
+    data = resp.json()
+
+    try:
+        price = float(data["data"][0]["price"]["total"])
+    except Exception:
+        price = None
+
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+    history_entries.append({"datetime": now, "departure": DEPARTURE_DATE, "price": price})
+
+# --- Сохраняем историю ---
 try:
     with open(HISTORY_FILE, "r") as f:
         history = json.load(f)
 except FileNotFoundError:
     history = []
 
-history.append({"datetime": now, "price": price})
-# оставляем последние 6 записей (3 дня по 2 проверки)
-history = history[-6:]
+history.extend(history_entries)
+history = history[-6:]  # оставляем последние 6 проверок (3 дня × 2 раза в день)
 
 with open(HISTORY_FILE, "w") as f:
     json.dump(history, f, indent=2)
 
-# --- Формируем отчет ---
-prices_str = "\n".join([f"{h['datetime']}: {h['price']} €" for h in history])
-report = f"✈️ WAW → BCN\nТекущая цена: {price} €\nПоследние 3 дня:\n{prices_str}"
+# --- Формируем отчёт ---
+prices_str = "\n".join([f"{h['datetime']} | {h['departure']}: {h['price']} €" for h in history])
+report = f"✈️ WAW → PFO (Paphos)\nПоследние 6 цен:\n{prices_str}"
 
 # --- Отправка в Telegram ---
 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
